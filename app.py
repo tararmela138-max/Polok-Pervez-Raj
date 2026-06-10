@@ -1,8 +1,7 @@
 import streamlit as st
 import os
 import time
-import requests
-from moviepy.editor import VideoFileClip, AudioFileClip, ImageClip
+from moviepy.editor import VideoFileClip, AudioFileClip, ImageClip, concatenate_videoclips
 import speech_recognition as sr
 from gtts import gTTS
 from pydub import AudioSegment
@@ -63,18 +62,36 @@ if uploaded_file is not None:
 
             final_sound.export("final_audio.mp3", format="mp3")
 
-            # ৫. আকর্ষণীয় ফুটেজ ও কপিরাইট চেক
-            video = VideoFileClip("input_video.mp4")
-            video.save_frame("downloaded_asset.jpg", t=1)
-            video.close()
+            # ৫. প্রতি ৫ সেকেন্ড পর পর ৩ সেকেন্ডের ফুটেজ যুক্ত করার লজিক
+            audio_duration = AudioFileClip("final_audio.mp3").duration
+            video_input = VideoFileClip("input_video.mp4")
+            clips = []
+            current_time = 0
+            
+            while current_time < audio_duration:
+                # ছবি তৈরি করা
+                video_input.save_frame("temp_frame.jpg", t=min(current_time, video_input.duration - 0.1))
+                img_clip = ImageClip("temp_frame.jpg").set_duration(5)
+                clips.append(img_clip)
+                current_time += 5
+                
+                if current_time >= audio_duration:
+                    break
+                
+                # ফুটেজ যুক্ত করা
+                footage_start = current_time % (video_input.duration - 3)
+                footage_clip = video_input.subclip(footage_start, min(footage_start + 3, video_input.duration))
+                clips.append(footage_clip)
+                current_time += 3
 
-            time.sleep(1)
+            final_video = concatenate_videoclips(clips)
+            audio_clip = AudioFileClip("final_audio.mp3")
+            final_video = final_video.set_audio(audio_clip)
+            
+            if final_video.duration > audio_duration:
+                final_video = final_video.subclip(0, audio_duration)
 
             # ৬. লোগোহীন 720p ভিডিও প্যাকেজিং
-            audio_clip = AudioFileClip("final_audio.mp3")
-            image_clip = ImageClip("downloaded_asset.jpg").set_duration(audio_clip.duration)
-
-            final_video = image_clip.set_audio(audio_clip)
             final_video.write_videofile(
                 "polok_output_720p.mp4",
                 fps=24,
@@ -83,11 +100,10 @@ if uploaded_file is not None:
                 logger=None
             )
 
+            video_input.close()
             final_video.close()
-            audio_clip.close()
-            image_clip.close()
 
-            for temp_file in ["input_video.mp4", "extracted_audio.wav", "temp_speech.mp3", "downloaded_asset.jpg"]:
+            for temp_file in ["input_video.mp4", "extracted_audio.wav", "temp_speech.mp3", "temp_frame.jpg", "final_audio.mp3"]:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
 
